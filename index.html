@@ -13,6 +13,7 @@
   --muted:#6b7280;
   --dial:#2563eb;
   --cyl:#d97706;
+  --border:#e5e7eb;
 }
 *{box-sizing:border-box}
 body{
@@ -22,16 +23,34 @@ body{
   color:var(--ink);
 }
 header{
-  position:sticky;
-  top:0;
+  position:sticky; top:0; z-index:10;
   background:rgba(255,255,255,.9);
   backdrop-filter: blur(14px);
   padding:16px;
   font-size:18px;
   font-weight:700;
-  border-bottom:1px solid #e5e7eb;
+  border-bottom:1px solid var(--border);
 }
 .container{ padding:14px; }
+
+/* Filters */
+.filters{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap:10px;
+  margin-bottom:12px;
+}
+.filters .full{ grid-column: 1 / -1; }
+select, input{
+  width:100%;
+  padding:10px 12px;
+  font-size:14px;
+  border-radius:12px;
+  border:1px solid var(--border);
+  background:#fff;
+}
+
+/* Cards */
 .card{
   background:var(--card);
   border-radius:18px;
@@ -60,10 +79,12 @@ header{
 }
 .dial{ background:#dbeafe; color:var(--dial); }
 .cylinder{ background:#fef3c7; color:var(--cyl); }
-.date{
-  font-size:12px;
+.date{ font-size:12px; color:var(--muted); margin-top:6px; }
+
+.empty{
+  text-align:center;
   color:var(--muted);
-  margin-top:6px;
+  margin-top:20px;
 }
 </style>
 </head>
@@ -72,53 +93,119 @@ header{
 
 <header>🪡 Needle Distribution</header>
 
-<div class="container" id="list">
-  Loading data…
+<div class="container">
+
+  <!-- Filters -->
+  <div class="filters">
+    <select id="machineFilter" class="full">
+      <option value="">All Machines</option>
+    </select>
+
+    <input type="date" id="fromDate" />
+    <input type="date" id="toDate" />
+  </div>
+
+  <div id="list">Loading data…</div>
 </div>
 
 <script>
-/* 🔴 APPS SCRIPT WEB APP URL */
-const API =
-  "https://script.google.com/macros/s/AKfycbyRQ984Va6T6_0BTdyK_b_i5S70noWUv2ZEZAxixpI6JJfJcedztTnVj3YmdDiSxJN8pQ/exec";
+/* 🔴 APPS SCRIPT JSONP URL */
+const API = "https://script.google.com/macros/s/AKfycbyRQ984Va6T6_0BTdyK_b_i5S70noWUv2ZEZAxixpI6JJfJcedztTnVj3YmdDiSxJN8pQ/exec";
+
+let ALL_DATA = [];
 
 /* JSONP callback */
 function renderData(data){
-  const list = document.getElementById("list");
-
-  if(!data || data.length === 0){
-    list.innerHTML = "No records found.";
-    return;
-  }
-
-  list.innerHTML = data.reverse().map(d => `
-    <div class="card">
-      <div class="top">
-        <div class="machine">Machine ${d.machine}</div>
-        <div class="qty">${d.qty}</div>
-      </div>
-
-      <div class="row">
-        <div>${d.needle}</div>
-        <span class="badge ${d.section === 'Dial' ? 'dial' : 'cylinder'}">
-          ${d.section}
-        </span>
-      </div>
-
-      <div class="date">
-        ${new Date(d.date).toLocaleString()}
-      </div>
-
-      ${d.remark ? `<div class="row">Note: ${d.remark}</div>` : ''}
-    </div>
-  `).join('');
+  ALL_DATA = Array.isArray(data) ? data : [];
+  buildMachineFilter(ALL_DATA);
+  applyFilters();
 }
 
-/* 🔥 JSONP loader */
+/* Load JSONP */
 (function(){
   const s = document.createElement("script");
   s.src = API + "?action=getData&callback=renderData";
   document.body.appendChild(s);
 })();
+
+/* Build machine dropdown */
+function buildMachineFilter(data){
+  const sel = document.getElementById('machineFilter');
+  const machines = [...new Set(data.map(d => d.machine))].sort((a,b)=>a-b);
+
+  machines.forEach(m=>{
+    const opt = document.createElement('option');
+    opt.value = m;
+    opt.textContent = `Machine ${m}`;
+    sel.appendChild(opt);
+  });
+}
+
+/* Apply filters */
+function applyFilters(){
+  const mVal = document.getElementById('machineFilter').value;
+  const from = document.getElementById('fromDate').value;
+  const to   = document.getElementById('toDate').value;
+
+  let filtered = ALL_DATA.slice();
+
+  if(mVal){
+    filtered = filtered.filter(d => String(d.machine) === String(mVal));
+  }
+
+  if(from){
+    const f = new Date(from);
+    filtered = filtered.filter(d => new Date(d.date) >= f);
+  }
+
+  if(to){
+    const t = new Date(to);
+    t.setHours(23,59,59,999);
+    filtered = filtered.filter(d => new Date(d.date) <= t);
+  }
+
+  renderList(filtered);
+}
+
+/* Render cards */
+function renderList(data){
+  const list = document.getElementById('list');
+
+  if(!data.length){
+    list.innerHTML = `<div class="empty">No records found.</div>`;
+    return;
+  }
+
+  list.innerHTML = data
+    .slice() // copy
+    .reverse()
+    .map(d => `
+      <div class="card">
+        <div class="top">
+          <div class="machine">Machine ${d.machine}</div>
+          <div class="qty">${d.qty}</div>
+        </div>
+
+        <div class="row">
+          <div>${d.needle}</div>
+          <span class="badge ${d.section === 'Dial' ? 'dial' : 'cylinder'}">
+            ${d.section}
+          </span>
+        </div>
+
+        <div class="date">
+          ${new Date(d.date).toLocaleString()}
+        </div>
+
+        ${d.remark ? `<div class="row">Note: ${d.remark}</div>` : ''}
+      </div>
+    `).join('');
+}
+
+/* Events */
+document.getElementById('machineFilter').addEventListener('change', applyFilters);
+document.getElementById('fromDate').addEventListener('change', applyFilters);
+document.getElementById('toDate').addEventListener('change', applyFilters);
 </script>
 
 </body>
